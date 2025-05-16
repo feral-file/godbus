@@ -61,6 +61,11 @@ func (p DBusPayload) IsSystemNameAcquired() bool {
 		p.Member == SYSTEM_NAME_ACQUIRED_MEMBER
 }
 
+func (p DBusPayload) IsSystemBus() bool {
+	return p.Interface == SYSTEM_DBUS_INTERFACE &&
+		p.Path == SYSTEM_DBUS_PATH
+}
+
 type BusSignalHandler func(
 	ctx context.Context,
 	payload DBusPayload) ([]any, error)
@@ -175,16 +180,19 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 		Body:      sig.Body,
 	}
 
-	// Skip system name acquired signals
-	if payload.IsSystemNameAcquired() {
-		if len(sig.Body) == 0 {
-			return fmt.Errorf("system name acquired signal has no body")
+	// Skip system bus signals
+	if payload.IsSystemBus() {
+		if payload.IsSystemNameAcquired() {
+			if len(sig.Body) == 0 {
+				return fmt.Errorf("system name acquired signal has no body")
+			}
+			senderID, ok := sig.Body[0].(string)
+			if !ok {
+				return fmt.Errorf("system name acquired signal body doesn't contain a sender ID string")
+			}
+			c.senderID = &senderID
 		}
-		senderID, ok := sig.Body[0].(string)
-		if !ok {
-			return fmt.Errorf("system name acquired signal body doesn't contain a sender ID string")
-		}
-		c.senderID = &senderID
+
 		return nil
 	}
 
