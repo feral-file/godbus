@@ -161,7 +161,7 @@ func (c *DBusClient) RemoveBusSignal(f BusSignalHandler) {
 // handleSignalRecv handles a received signal that's not an ACK
 func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 	if c.senderID != nil && *c.senderID == sig.Sender {
-		c.logger.Info("Skip self-generated signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)), zap.String("member", sig.Name))
+		c.logger.Debug("Skip self-generated signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)), zap.String("member", sig.Name))
 		return nil
 	}
 
@@ -194,6 +194,11 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 		}
 
 		return nil
+	}
+
+	// Ensure senderID is set
+	if c.senderID == nil {
+		return fmt.Errorf("senderID is not set")
 	}
 
 	// Send ACK
