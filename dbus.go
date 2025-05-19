@@ -103,6 +103,13 @@ func (c *DBusClient) Start() error {
 	c.conn = conn
 	conn.Signal(c.sigChan)
 
+	// Get all names on the bus
+	names := conn.Names()
+	c.logger.Debug("Names on the bus", zap.Any("names", names))
+	if len(names) > 1 {
+		c.senderID = &names[0]
+	}
+
 	err = conn.AddMatchSignalContext(c.ctx, c.matchOptions...)
 	if err != nil {
 		return err
