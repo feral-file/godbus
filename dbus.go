@@ -107,7 +107,9 @@ func (c *DBusClient) Start() error {
 	names := conn.Names()
 	c.logger.Debug("Names on the bus", zap.Any("names", names))
 	if len(names) > 1 {
+		c.Lock()
 		c.senderID = &names[0]
+		c.Unlock()
 	}
 
 	err = conn.AddMatchSignalContext(c.ctx, c.matchOptions...)
@@ -167,10 +169,13 @@ func (c *DBusClient) RemoveBusSignal(f BusSignalHandler) {
 
 // handleSignalRecv handles a received signal that's not an ACK
 func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
+	c.Lock()
 	if c.senderID != nil && *c.senderID == sig.Sender {
+		c.Unlock()
 		c.logger.Debug("Skip self-generated signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)), zap.String("member", sig.Name))
 		return nil
 	}
+	c.Unlock()
 
 	i := strings.LastIndex(sig.Name, ".")
 	if i == -1 {
@@ -197,16 +202,21 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 			if !ok {
 				return fmt.Errorf("system name acquired signal body doesn't contain a sender ID string")
 			}
+			c.Lock()
 			c.senderID = &senderID
+			c.Unlock()
 		}
 
 		return nil
 	}
 
 	// Ensure senderID is set
+	c.Lock()
 	if c.senderID == nil {
+		c.Unlock()
 		return fmt.Errorf("senderID is not set")
 	}
+	c.Unlock()
 
 	// Send ACK
 	if !member.IsACK() {
