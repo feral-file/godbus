@@ -140,7 +140,7 @@ func (c *DBusClient) background() {
 					continue
 				}
 
-				c.logger.Info("Received DBus signal", zap.Any("signal", sig))
+				c.logger.Info("Received DBus signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)))
 				if err := c.handleSignalRecv(sig); err != nil {
 					c.logger.Error("Failed to handle signal", zap.Error(err))
 				}
@@ -172,7 +172,7 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 	c.Lock()
 	if c.senderID != nil && *c.senderID == sig.Sender {
 		c.Unlock()
-		c.logger.Debug("Skip self-generated signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)), zap.String("member", sig.Name))
+		c.logger.Debug("Skip self-generated signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)))
 		return nil
 	}
 	c.Unlock()
@@ -222,7 +222,7 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 	if !member.IsACK() {
 		err := c.SendACK(payload)
 		if err != nil {
-			c.logger.Warn("Failed to send ACK", zap.String("interface", iface.String()), zap.String("path", path.String()), zap.String("member", member.String()), zap.Error(err))
+			c.logger.Warn("Failed to send ACK", zap.String("name", payload.Name()), zap.String("path", payload.Path.String()), zap.Error(err))
 		}
 	}
 
@@ -287,7 +287,7 @@ func (c *DBusClient) RetryableSend(ctx context.Context, payload DBusPayload) err
 	attempts := 0
 	ops := func() error {
 		attempts++
-		c.logger.Info(fmt.Sprintf("Sending signal with %d attempts", attempts), zap.String("interface", payload.Interface.String()), zap.String("path", payload.Path.String()), zap.String("member", payload.Member.String()), zap.Any("body", payload.Body))
+		c.logger.Info(fmt.Sprintf("Sending signal with %d attempts", attempts), zap.String("name", payload.Name()), zap.String("path", payload.Path.String()))
 
 		// Send the signal
 		if err := c.Send(payload); err != nil {
@@ -313,7 +313,7 @@ func (c *DBusClient) Send(payload DBusPayload) error {
 	c.Lock()
 	defer c.Unlock()
 
-	c.logger.Info("Sending signal", zap.String("interface", payload.Interface.String()), zap.String("path", payload.Path.String()), zap.String("member", payload.Member.String()), zap.Any("body", payload.Body))
+	c.logger.Info("Sending signal", zap.String("name", payload.Name()), zap.String("path", payload.Path.String()))
 	return c.conn.Emit(dbus.ObjectPath(payload.Path), payload.Name(), payload.Body...)
 }
 
