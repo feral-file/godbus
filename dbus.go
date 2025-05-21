@@ -79,11 +79,12 @@ type DBusClient struct {
 	doneChan          chan struct{}
 	logger            *zap.Logger
 	busSignalHandlers []BusSignalHandler
-	senderID          *string
+	ID                *string
+	serviceName       string
 	matchOptions      []dbus.MatchOption
 }
 
-func NewDBusClient(ctx context.Context, logger *zap.Logger, matchOptions ...dbus.MatchOption) *DBusClient {
+func NewDBusClient(ctx context.Context, logger *zap.Logger, serviceName string, matchOptions ...dbus.MatchOption) *DBusClient {
 	return &DBusClient{
 		ctx:               ctx,
 		sigChan:           make(chan *dbus.Signal, 10),
@@ -91,6 +92,7 @@ func NewDBusClient(ctx context.Context, logger *zap.Logger, matchOptions ...dbus
 		logger:            logger,
 		busSignalHandlers: []BusSignalHandler{},
 		matchOptions:      matchOptions,
+		serviceName:       serviceName,
 	}
 }
 
@@ -103,15 +105,25 @@ func (c *DBusClient) Start() error {
 	c.conn = conn
 	conn.Signal(c.sigChan)
 
-	// Get all names on the bus
-	names := conn.Names()
-	c.logger.Debug("Names on the bus", zap.Any("names", names))
-	if len(names) > 1 {
-		c.Lock()
-		c.senderID = &names[0]
-		c.Unlock()
+	// Request service name
+	rel, err := conn.RequestName(c.serviceName, dbus.NameFlagDoNotQueue)
+	if err != nil {
+		return err
+	}
+	if rel != dbus.RequestNameReplyPrimaryOwner {
+		return fmt.Errorf("failed to request name: %d", rel)
 	}
 
+	// Get ID acquired
+	names := conn.Names()
+	if len(names) == 0 {
+		return fmt.Errorf("no names on the bus")
+	}
+	c.Lock()
+	c.ID = &names[0]
+	c.Unlock()
+
+	// Add match options
 	err = conn.AddMatchSignalContext(c.ctx, c.matchOptions...)
 	if err != nil {
 		return err
@@ -120,6 +132,17 @@ func (c *DBusClient) Start() error {
 	c.background()
 
 	return nil
+}
+
+func (c *DBusClient) Export(v any, path Path, iface string) error {
+	c.Lock()
+	defer c.Unlock()
+
+	if c.conn == nil {
+		return fmt.Errorf("DBusClient not started")
+	}
+
+	return c.conn.Export(v, dbus.ObjectPath(path), iface)
 }
 
 func (c *DBusClient) background() {
@@ -170,7 +193,7 @@ func (c *DBusClient) RemoveBusSignal(f BusSignalHandler) {
 // handleSignalRecv handles a received signal that's not an ACK
 func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 	c.Lock()
-	if c.senderID != nil && *c.senderID == sig.Sender {
+	if c.ID != nil && *c.ID == sig.Sender {
 		c.Unlock()
 		c.logger.Debug("Skip self-generated signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)))
 		return nil
@@ -203,7 +226,7 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 				return fmt.Errorf("system name acquired signal body doesn't contain a sender ID string")
 			}
 			c.Lock()
-			c.senderID = &senderID
+			c.ID = &senderID
 			c.Unlock()
 		}
 
@@ -212,7 +235,7 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 
 	// Ensure senderID is set
 	c.Lock()
-	if c.senderID == nil {
+	if c.ID == nil {
 		c.Unlock()
 		return fmt.Errorf("senderID is not set")
 	}
@@ -274,7 +297,7 @@ func (c *DBusClient) RetryableSend(ctx context.Context, payload DBusPayload) err
 
 	// Create a temporary handler to listen for ACK
 	var handler BusSignalHandler
-	handler = func(ctx context.Context, p DBusPayload) ([]interface{}, error) {
+	handler = func(ctx context.Context, p DBusPayload) ([]any, error) {
 		// Check if this is the ACK for our signal
 		if p.Member == payload.Member.ACK() {
 			close(ackChan)
@@ -321,6 +344,21 @@ func (c *DBusClient) Send(payload DBusPayload) error {
 
 	c.logger.Info("Sending signal", zap.String("name", payload.Name()), zap.String("path", payload.Path.String()))
 	return c.conn.Emit(dbus.ObjectPath(payload.Path), payload.Name(), payload.Body...)
+}
+
+func (c *DBusClient) Call(serviceName string, path Path, iface Interface, member Member, args ...any) ([]any, error) {
+	c.Lock()
+	defer c.Unlock()
+
+	obj := c.conn.Object(serviceName, dbus.ObjectPath(path))
+	call := obj.Call(fmt.Sprintf("%s.%s", iface, member), 0, args...)
+	if call.Err != nil {
+		return nil, call.Err
+	}
+
+	var result []any
+	call.Store(&result)
+	return result, nil
 }
 
 func (c *DBusClient) Stop() error {
