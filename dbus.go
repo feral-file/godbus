@@ -232,14 +232,20 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 
 		// Run the handler in a separate goroutine to avoid blocking the main thread
 		go func(ctx context.Context, payload DBusPayload, handler BusSignalHandler) error {
-			// Handle signal
-			_, err := handler(ctx, payload)
-			if err != nil {
-				c.logger.Warn("Failed to handle signal", zap.String("interface", iface.String()), zap.String("path", path.String()), zap.String("member", member.String()), zap.Error(err))
-				return err
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-c.doneChan:
+				return fmt.Errorf("DBusClient stopped")
+			default:
+				// Handle signal
+				_, err := handler(ctx, payload)
+				if err != nil {
+					c.logger.Warn("Failed to handle signal", zap.String("interface", iface.String()), zap.String("path", path.String()), zap.String("member", member.String()), zap.Error(err))
+					return err
+				}
+				return nil
 			}
-
-			return nil
 		}(c.ctx, p, h)
 	}
 
