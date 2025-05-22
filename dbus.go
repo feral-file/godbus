@@ -134,7 +134,7 @@ func (c *DBusClient) Start() error {
 	return nil
 }
 
-func (c *DBusClient) Export(v any, path Path, iface string) error {
+func (c *DBusClient) Export(v any, path Path, iface Interface) error {
 	c.Lock()
 	defer c.Unlock()
 
@@ -142,7 +142,7 @@ func (c *DBusClient) Export(v any, path Path, iface string) error {
 		return fmt.Errorf("DBusClient not started")
 	}
 
-	return c.conn.Export(v, dbus.ObjectPath(path), iface)
+	return c.conn.Export(v, dbus.ObjectPath(path), iface.String())
 }
 
 func (c *DBusClient) background() {
