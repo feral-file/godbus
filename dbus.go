@@ -79,7 +79,7 @@ type DBusClient struct {
 	doneChan          chan struct{}
 	logger            *zap.Logger
 	busSignalHandlers []BusSignalHandler
-	ID                *string
+	serviceID         *string
 	serviceName       string
 	matchOptions      []dbus.MatchOption
 }
@@ -114,13 +114,13 @@ func (c *DBusClient) Start() error {
 		return fmt.Errorf("failed to request name: %d", rel)
 	}
 
-	// Get ID acquired
+	// Get service ID acquired
 	names := conn.Names()
 	if len(names) == 0 {
 		return fmt.Errorf("no names on the bus")
 	}
 	c.Lock()
-	c.ID = &names[0]
+	c.serviceID = &names[0]
 	c.Unlock()
 
 	// Add match options
@@ -193,7 +193,7 @@ func (c *DBusClient) RemoveBusSignal(f BusSignalHandler) {
 // handleSignalRecv handles a received signal that's not an ACK
 func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 	c.Lock()
-	if c.ID != nil && *c.ID == sig.Sender {
+	if c.serviceID != nil && *c.serviceID == sig.Sender {
 		c.Unlock()
 		c.logger.Debug("Skip self-generated signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)))
 		return nil
@@ -226,7 +226,7 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 				return fmt.Errorf("system name acquired signal body doesn't contain a sender ID string")
 			}
 			c.Lock()
-			c.ID = &senderID
+			c.serviceID = &senderID
 			c.Unlock()
 		}
 
@@ -235,7 +235,7 @@ func (c *DBusClient) handleSignalRecv(sig *dbus.Signal) error {
 
 	// Ensure senderID is set
 	c.Lock()
-	if c.ID == nil {
+	if c.serviceID == nil {
 		c.Unlock()
 		return fmt.Errorf("senderID is not set")
 	}
