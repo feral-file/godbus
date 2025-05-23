@@ -121,6 +121,7 @@ func (c *DBusClient) Start() error {
 	}
 	c.Lock()
 	c.serviceID = &names[0]
+	c.logger.Debug("Service ID acquired", zap.String("serviceID", *c.serviceID))
 	c.Unlock()
 
 	// Add match options
@@ -152,7 +153,10 @@ func (c *DBusClient) background() {
 			select {
 			case <-c.ctx.Done():
 				c.logger.Info("Context cancelled, stopping DBusClient")
-				c.Stop()
+				err := c.Stop()
+				if err != nil {
+					c.logger.Error("Failed to stop DBusClient", zap.Error(err))
+				}
 				return
 			case <-c.doneChan:
 				c.logger.Info("DBusClient stopped")
@@ -163,7 +167,7 @@ func (c *DBusClient) background() {
 					continue
 				}
 
-				c.logger.Info("Received DBus signal", zap.String("name", sig.Name), zap.String("path", string(sig.Path)))
+				c.logger.Info("Received DBus signal", zap.String("sender", sig.Sender), zap.String("name", sig.Name), zap.String("path", string(sig.Path)))
 				if err := c.handleSignalRecv(sig); err != nil {
 					c.logger.Error("Failed to handle signal", zap.Error(err))
 				}
@@ -175,6 +179,7 @@ func (c *DBusClient) background() {
 func (c *DBusClient) OnBusSignal(f BusSignalHandler) {
 	c.Lock()
 	defer c.Unlock()
+	c.logger.Debug("Adding bus signal handler", zap.String("handler pointer", fmt.Sprintf("%p", f)))
 	c.busSignalHandlers = append(c.busSignalHandlers, f)
 }
 
@@ -182,9 +187,11 @@ func (c *DBusClient) RemoveBusSignal(f BusSignalHandler) {
 	c.Lock()
 	defer c.Unlock()
 
+	c.logger.Debug("Removing bus signal handler", zap.String("handler pointer", fmt.Sprintf("%p", &f)))
 	for i, handler := range c.busSignalHandlers {
-		if fmt.Sprintf("%p", handler) == fmt.Sprintf("%p", f) {
+		if fmt.Sprintf("%p", handler) == fmt.Sprintf("%p", &f) {
 			c.busSignalHandlers = append(c.busSignalHandlers[:i], c.busSignalHandlers[i+1:]...)
+			c.logger.Debug("Removed bus signal handler", zap.String("handler pointer", fmt.Sprintf("%p", &f)))
 			break
 		}
 	}
@@ -294,13 +301,17 @@ func (c *DBusClient) RetryableSend(ctx context.Context, payload DBusPayload) err
 
 	// Create a channel to receive ACK
 	ackChan := make(chan struct{})
+	var once sync.Once
 
 	// Create a temporary handler to listen for ACK
 	var handler BusSignalHandler
 	handler = func(ctx context.Context, p DBusPayload) ([]any, error) {
 		// Check if this is the ACK for our signal
 		if p.Member == payload.Member.ACK() {
-			close(ackChan)
+			once.Do(func() {
+				close(ackChan)
+			})
+
 			// Remove this temporary handler
 			c.RemoveBusSignal(handler)
 			return nil, nil
@@ -316,7 +327,6 @@ func (c *DBusClient) RetryableSend(ctx context.Context, payload DBusPayload) err
 	attempts := 0
 	ops := func() error {
 		attempts++
-		c.logger.Info(fmt.Sprintf("Sending signal with %d attempts", attempts), zap.String("name", payload.Name()), zap.String("path", payload.Path.String()))
 
 		// Send the signal
 		if err := c.Send(payload); err != nil {
@@ -375,7 +385,10 @@ func (c *DBusClient) Stop() error {
 	}
 
 	if c.conn != nil {
-		c.conn.Close()
+		err := c.conn.Close()
+		if err != nil {
+			return err
+		}
 		c.conn = nil
 		c.logger.Info("DBusClient connection closed")
 	}
