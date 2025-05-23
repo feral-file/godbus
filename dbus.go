@@ -62,8 +62,7 @@ func (p DBusPayload) IsSystemNameAcquired() bool {
 }
 
 func (p DBusPayload) IsSystemBus() bool {
-	return p.Interface == SYSTEM_DBUS_INTERFACE &&
-		p.Path == SYSTEM_DBUS_PATH
+	return strings.HasPrefix(p.Interface.String(), "org.freedesktop")
 }
 
 type BusSignalHandler func(
