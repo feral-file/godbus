@@ -355,18 +355,26 @@ func (c *DBusClient) Send(payload DBusPayload) error {
 	return c.conn.Emit(dbus.ObjectPath(payload.Path), payload.Name(), payload.Body...)
 }
 
-func (c *DBusClient) Call(serviceName string, path Path, iface Interface, member Member, args ...any) ([]any, error) {
+func (c *DBusClient) Call(ctx context.Context, serviceName string, path Path, iface Interface, member Member, args ...any) ([]any, error) {
 	c.Lock()
 	defer c.Unlock()
 
+	if c.conn == nil {
+		return nil, fmt.Errorf("DBusClient not started")
+	}
+
 	obj := c.conn.Object(serviceName, dbus.ObjectPath(path))
-	call := obj.Call(fmt.Sprintf("%s.%s", iface, member), 0, args...)
+	call := obj.CallWithContext(ctx, fmt.Sprintf("%s.%s", iface, member), 0, args...)
 	if call.Err != nil {
 		return nil, call.Err
 	}
 
 	var result []any
-	call.Store(&result)
+	err := call.Store(&result)
+	if err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
 
