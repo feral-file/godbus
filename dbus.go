@@ -369,13 +369,7 @@ func (c *DBusClient) Call(ctx context.Context, serviceName string, path Path, if
 		return nil, call.Err
 	}
 
-	var result []any
-	err := call.Store(&result)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return call.Body, nil
 }
 
 func (c *DBusClient) Stop() error {
