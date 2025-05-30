@@ -151,14 +151,14 @@ func (c *DBusClient) background() {
 		for {
 			select {
 			case <-c.ctx.Done():
-				c.logger.Info("Context cancelled, stopping DBusClient")
+				c.logger.Debug("Context cancelled, stopping DBusClient")
 				err := c.Stop()
 				if err != nil {
 					c.logger.Error("Failed to stop DBusClient", zap.Error(err))
 				}
 				return
 			case <-c.doneChan:
-				c.logger.Info("DBusClient stopped")
+				c.logger.Debug("DBusClient stopped")
 				return
 			case sig := <-c.sigChan:
 				if sig == nil {
@@ -166,7 +166,7 @@ func (c *DBusClient) background() {
 					continue
 				}
 
-				c.logger.Info("Received DBus signal", zap.String("sender", sig.Sender), zap.String("name", sig.Name), zap.String("path", string(sig.Path)))
+				c.logger.Debug("Received DBus signal", zap.String("sender", sig.Sender), zap.String("name", sig.Name), zap.String("path", string(sig.Path)))
 				if err := c.handleSignalRecv(sig); err != nil {
 					c.logger.Error("Failed to handle signal", zap.Error(err))
 				}
@@ -351,7 +351,7 @@ func (c *DBusClient) Send(payload DBusPayload) error {
 	c.Lock()
 	defer c.Unlock()
 
-	c.logger.Info("Sending signal", zap.String("name", payload.Name()), zap.String("path", payload.Path.String()))
+	c.logger.Debug("Sending signal", zap.String("name", payload.Name()), zap.String("path", payload.Path.String()))
 	return c.conn.Emit(dbus.ObjectPath(payload.Path), payload.Name(), payload.Body...)
 }
 
