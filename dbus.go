@@ -372,6 +372,24 @@ func (c *DBusClient) Call(ctx context.Context, serviceName string, path Path, if
 	return call.Body, nil
 }
 
+func (c *DBusClient) Query(ctx context.Context, dest []interface{}, serviceName string, path Path, iface Interface, member Member, args ...any) error {
+	c.Lock()
+	defer c.Unlock()
+
+	if c.conn == nil {
+		return fmt.Errorf("DBusClient not started")
+	}
+
+	obj := c.conn.Object(serviceName, dbus.ObjectPath(path))
+	call := obj.CallWithContext(ctx, fmt.Sprintf("%s.%s", iface, member), 0, args...)
+	if call.Err != nil {
+		return call.Err
+	}
+	call.Store(dest...)
+
+	return nil
+}
+
 func (c *DBusClient) Stop() error {
 	c.Lock()
 	defer c.Unlock()
