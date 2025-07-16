@@ -355,7 +355,7 @@ func (c *DBusClient) Send(payload DBusPayload) error {
 	return c.conn.Emit(dbus.ObjectPath(payload.Path), payload.Name(), payload.Body...)
 }
 
-func (c *DBusClient) Call(ctx context.Context, serviceName string, path Path, iface Interface, member Member, args ...any) ([]any, error) {
+func (c *DBusClient) callMethod(ctx context.Context, serviceName string, path Path, iface Interface, member Member, args ...any) (*dbus.Call, error) {
 	c.Lock()
 	defer c.Unlock()
 
@@ -369,25 +369,34 @@ func (c *DBusClient) Call(ctx context.Context, serviceName string, path Path, if
 		return nil, call.Err
 	}
 
+	return call, nil
+}
+
+// Call sends a method call and returns the response body.
+func (c *DBusClient) Call(ctx context.Context, serviceName string, path Path, iface Interface, member Member, args ...any) ([]any, error) {
+	call, err := c.callMethod(ctx, serviceName, path, iface, member, args...)
+	if err != nil {
+		return nil, err
+	}
 	return call.Body, nil
 }
 
-func (c *DBusClient) Query(ctx context.Context, dest []interface{}, serviceName string, path Path, iface Interface, member Member, args ...any) error {
-	c.Lock()
-	defer c.Unlock()
-
-	if c.conn == nil {
-		return fmt.Errorf("DBusClient not started")
+// Query sends a method call and stores the response in the provided destination. (single value)
+func (c *DBusClient) Query(ctx context.Context, dest interface{}, serviceName string, path Path, iface Interface, member Member, args ...any) error {
+	call, err := c.callMethod(ctx, serviceName, path, iface, member, args...)
+	if err != nil {
+		return err
 	}
+	return call.Store(dest)
+}
 
-	obj := c.conn.Object(serviceName, dbus.ObjectPath(path))
-	call := obj.CallWithContext(ctx, fmt.Sprintf("%s.%s", iface, member), 0, args...)
-	if call.Err != nil {
-		return call.Err
+// Scan sends a method call and stores the response in the provided destination slice. (multiple values)
+func (c *DBusClient) Scan(ctx context.Context, dest []interface{}, serviceName string, path Path, iface Interface, member Member, args ...any) error {
+	call, err := c.callMethod(ctx, serviceName, path, iface, member, args...)
+	if err != nil {
+		return err
 	}
-	call.Store(dest...)
-
-	return nil
+	return call.Store(dest...)
 }
 
 func (c *DBusClient) Stop() error {
